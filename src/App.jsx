@@ -117,7 +117,7 @@ export default function App() {
 
       {/* TOP HEADER */}
       <header className="bg-retro-dark text-retro-bg py-4 px-6 border-b-4 border-retro-accent flex flex-col sm:flex-row justify-between items-center gap-4 shadow-md z-20">
-        <div className="flex items-center gap-2.5">
+        <button onClick={() => window.location.href = '/'} className="flex items-center gap-2.5 hover:opacity-80 transition-opacity text-left cursor-pointer">
           <span className="text-2xl">🎞️</span>
           <div>
             <h1 className="font-mono text-xl font-black italic tracking-wider leading-none text-white">
@@ -127,7 +127,7 @@ export default function App() {
               Shared Film Roll Experience
             </span>
           </div>
-        </div>
+        </button>
 
         {/* Identity Badge */}
         {nickname && (

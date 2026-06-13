@@ -93,3 +93,18 @@
   background-size: 4px 4px;
   background-position: 0 0, 2px 2px;
 }
+
+/* Film Strip Decoration */
+.film-strip-border {
+  height: 28px;
+  width: 100%;
+  background-color: #1a1410;
+  background-image: radial-gradient(circle, #C9A96E 30%, transparent 35%);
+  background-size: 32px 28px;
+  background-repeat: repeat-x;
+  background-position: center;
+}
+
+.cursor-crosshair-custom {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z'></path><circle cx='12' cy='13' r='4'></circle></svg>") 12 12, auto;
+}

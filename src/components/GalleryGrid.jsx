@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Heart, Maximize2, Loader, Image as ImageIcon } from 'lucide-react';
+import { Heart, Maximize2, Loader, Image as ImageIcon, Download } from 'lucide-react';
 
 export default function GalleryGrid({ nickname, sessionId, rollId }) {
   const [photos, setPhotos] = useState([]);
@@ -185,6 +185,24 @@ export default function GalleryGrid({ nickname, sessionId, rollId }) {
     return `'${year}/${month}/${day}`;
   };
 
+  const handleDownload = async (photoUrl, photoName) => {
+    try {
+      const response = await fetch(photoUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `flashback-${photoName.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Failed to download image', err);
+    }
+  };
+
   return (
     <div className="w-full max-w-5xl mx-auto px-4 py-8">
       {/* GALLERY STATUS BAR */}
@@ -330,20 +348,34 @@ export default function GalleryGrid({ nickname, sessionId, rollId }) {
                 </span>
               </div>
 
-              {/* Likes on Lightbox */}
-              <button
-                onClick={(e) => handleLike(activeLightbox.id, e)}
-                className={`flex items-center gap-1.5 transition-all duration-100 hover:scale-105 active:scale-95 py-2 px-3 rounded-md border ${
-                  likedPhotos.includes(activeLightbox.id)
-                    ? 'text-red-500 bg-red-50 border-red-200'
-                    : 'text-retro-dark/60 border-zinc-200 hover:text-red-500 hover:bg-red-50'
-                }`}
-              >
-                <Heart className={`w-4 h-4 ${likedPhotos.includes(activeLightbox.id) ? 'fill-current' : ''}`} />
-                <span className="font-mono text-xs font-bold">
-                  {activeLightbox.likes || 0}
-                </span>
-              </button>
+              {/* Actions on Lightbox */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownload(activeLightbox.url, activeLightbox.author_name);
+                  }}
+                  className="flex items-center gap-1.5 transition-all duration-100 hover:scale-105 active:scale-95 py-2 px-3 rounded-md border text-retro-dark/60 border-zinc-200 hover:text-retro-dark hover:bg-zinc-100"
+                  title="Download photo"
+                >
+                  <Download className="w-4 h-4" />
+                  <span className="font-mono text-xs font-bold">Save</span>
+                </button>
+
+                <button
+                  onClick={(e) => handleLike(activeLightbox.id, e)}
+                  className={`flex items-center gap-1.5 transition-all duration-100 hover:scale-105 active:scale-95 py-2 px-3 rounded-md border ${
+                    likedPhotos.includes(activeLightbox.id)
+                      ? 'text-red-500 bg-red-50 border-red-200'
+                      : 'text-retro-dark/60 border-zinc-200 hover:text-red-500 hover:bg-red-50'
+                  }`}
+                >
+                  <Heart className={`w-4 h-4 ${likedPhotos.includes(activeLightbox.id) ? 'fill-current' : ''}`} />
+                  <span className="font-mono text-xs font-bold">
+                    {activeLightbox.likes || 0}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

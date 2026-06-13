@@ -15,9 +15,7 @@ export default function CameraView({ nickname, sessionId, onPhotoUploaded, rollI
     const saved = localStorage.getItem('flashback_film_counter');
     return saved !== null ? parseInt(saved, 10) : 27;
   });
-  const [readyToSnap, setReadyToSnap] = useState(() => {
-    return localStorage.getItem('flashback_ready_to_snap') !== 'false';
-  });
+  const [readyToSnap, setReadyToSnap] = useState(true);
   const [isWinding, setIsWinding] = useState(false);
   const [isFlashActive, setIsFlashActive] = useState(false);
   const [isDeveloping, setIsDeveloping] = useState(false);
@@ -65,8 +63,7 @@ export default function CameraView({ nickname, sessionId, onPhotoUploaded, rollI
   // Save film states
   useEffect(() => {
     localStorage.setItem('flashback_film_counter', filmCounter);
-    localStorage.setItem('flashback_ready_to_snap', readyToSnap);
-  }, [filmCounter, readyToSnap]);
+  }, [filmCounter]);
 
   // Audio Synthesizers (Web Audio API)
   const playShutterSound = () => {
@@ -216,6 +213,7 @@ export default function CameraView({ nickname, sessionId, onPhotoUploaded, rollI
         setTimeout(() => {
           setIsDeveloping(false);
           setDevelopingPhoto(null);
+          setReadyToSnap(true);
           // Callback to switch to gallery
           if (onPhotoUploaded) onPhotoUploaded(result.photo);
         }, 500);
@@ -283,9 +281,12 @@ export default function CameraView({ nickname, sessionId, onPhotoUploaded, rollI
 
       canvas.toBlob((blob) => {
         if (blob) {
-          // Decrement film roll
-          setFilmCounter(prev => prev - 1);
+          // Decrement film roll (loops back to 27 automatically)
+          setFilmCounter(prev => prev <= 1 ? 27 : prev - 1);
           setReadyToSnap(false);
+          setIsWinding(true);
+          playWindSound();
+          setTimeout(() => setIsWinding(false), 1000);
           // Develop!
           developPhoto(blob);
         }
@@ -298,10 +299,7 @@ export default function CameraView({ nickname, sessionId, onPhotoUploaded, rollI
     const file = e.target.files[0];
     if (!file) return;
 
-    if (filmCounter <= 0) {
-      alert("Roll finished! You'll need to drop off this roll first.");
-      return;
-    }
+
 
     // Max 10MB
     if (file.size > 10 * 1024 * 1024) {
@@ -309,16 +307,15 @@ export default function CameraView({ nickname, sessionId, onPhotoUploaded, rollI
       return;
     }
 
-    setFilmCounter(prev => prev - 1);
+    setFilmCounter(prev => prev <= 1 ? 27 : prev - 1);
     setReadyToSnap(false);
+    setIsWinding(true);
+    playWindSound();
+    setTimeout(() => setIsWinding(false), 1000);
     developPhoto(file);
   };
 
-  // Reset roll counter
-  const resetRoll = () => {
-    setFilmCounter(27);
-    setReadyToSnap(true);
-  };
+
 
   return (
     <div className="flex flex-col items-center justify-center p-4 max-w-lg mx-auto select-none">
@@ -362,23 +359,6 @@ export default function CameraView({ nickname, sessionId, onPhotoUploaded, rollI
         </div>
       )}
 
-      {/* RETAIL SHOT / ROLL FINISHED PANEL */}
-      {filmCounter <= 0 && !isDeveloping ? (
-        <div className="bg-retro-dark text-retro-bg p-8 rounded-xl border-4 border-retro-accent shadow-2xl text-center w-full my-8">
-          <div className="text-6xl mb-4">🎞️</div>
-          <h2 className="font-handwritten text-5xl mb-4 text-retro-accent">Roll finished!</h2>
-          <p className="font-mono text-xs text-retro-bg/60 uppercase tracking-widest mb-6">
-            Drop it off to process the negative film.
-          </p>
-          <button
-            onClick={resetRoll}
-            className="w-full bg-retro-accent text-retro-dark font-mono uppercase font-bold py-3 px-6 rounded-md hover:bg-retro-accent/90 border-2 border-retro-dark transition-all active:translate-y-0.5"
-          >
-            Insert New Film Roll
-          </button>
-        </div>
-      ) : (
-        <>
           {/* CAMERA BODY FRONT */}
           <div className="w-full bg-[#1e1a17] plastic-texture border-[6px] border-retro-dark rounded-3xl p-5 shadow-2xl relative overflow-hidden">
             {/* Cardboard Card Overlay Sticker */}
@@ -396,14 +376,35 @@ export default function CameraView({ nickname, sessionId, onPhotoUploaded, rollI
                 </span>
               </div>
 
-              {/* Status LED Light */}
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[7px] text-zinc-400 uppercase tracking-wider">Ready LED</span>
-                <div 
-                  className={`w-3 h-3 rounded-full border border-black shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] ${
-                    readyToSnap && !isWinding ? 'bg-green-500 shadow-[0_0_8px_#10b981]' : 'bg-red-600 shadow-[0_0_4px_#ef4444]'
-                  }`}
-                />
+              {/* Status & Counter */}
+              <div className="flex items-center gap-4">
+                {hasCamera && (
+                  <button
+                    onClick={toggleCamera}
+                    className="bg-zinc-900 hover:bg-zinc-800 text-zinc-400 p-1.5 rounded border border-black shadow-[inset_0_1px_2px_rgba(255,255,255,0.05)] transition-all active:scale-95 pointer-events-auto"
+                    title="Switch Camera View"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                  </button>
+                )}
+
+                <div className="bg-[#100c0a] border-2 border-retro-dark px-2 py-0.5 rounded flex items-center justify-center shadow-inner select-none pointer-events-auto">
+                  <div className="font-mono text-red-600 text-[10px] font-black tracking-widest lcd-glow leading-none mr-1">
+                    {String(filmCounter).padStart(2, '0')}
+                  </div>
+                  <div className="font-mono text-[5px] text-zinc-500 uppercase tracking-wider font-bold">
+                    Left
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-[7px] text-zinc-400 uppercase tracking-wider">Ready</span>
+                  <div 
+                    className={`w-2.5 h-2.5 rounded-full border border-black shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)] ${
+                      readyToSnap && !isWinding ? 'bg-green-500 shadow-[0_0_8px_#10b981]' : 'bg-red-600 shadow-[0_0_4px_#ef4444]'
+                    }`}
+                  />
+                </div>
               </div>
             </div>
 
@@ -433,17 +434,7 @@ export default function CameraView({ nickname, sessionId, onPhotoUploaded, rollI
                 ISO 400 • F/8 • {facingMode === 'user' ? 'FRONT' : 'REAR'}
               </div>
 
-              {/* Unwound Viewfinder shade */}
-              {!readyToSnap && !isDeveloping && (
-                <div className="absolute inset-0 bg-[#3b0000]/60 backdrop-blur-[1px] flex flex-col items-center justify-center text-center p-4">
-                  <p className="text-retro-bg font-handwritten text-4xl rotate-[-4deg] drop-shadow-md">
-                    WIND FILM! ↺
-                  </p>
-                  <p className="font-mono text-[9px] uppercase text-zinc-300 mt-2 tracking-wider">
-                    Spin Winding Wheel in Top Right
-                  </p>
-                </div>
-              )}
+
             </div>
 
             {/* LOWER CONTROLS & CAMERA BACK DETAILS */}
@@ -469,84 +460,28 @@ export default function CameraView({ nickname, sessionId, onPhotoUploaded, rollI
                 <span className="font-mono text-[8px] text-zinc-400 uppercase tracking-wider">Import</span>
               </div>
 
-              {/* Camera Lens Circle Graphic */}
-              <div className="w-12 h-12 bg-gradient-to-br from-zinc-700 to-zinc-900 border-[3px] border-retro-dark rounded-full shadow-inner flex items-center justify-center relative">
-                <div className="w-7 h-7 bg-zinc-950 rounded-full border border-zinc-800 flex items-center justify-center">
-                  <div className="w-2 h-2 bg-blue-900 rounded-full shadow-[0_0_3px_rgba(59,130,246,0.6)]" />
-                </div>
-              </div>
-
-              {/* Front/Rear Lens Switcher */}
-              {hasCamera && (
-                <div className="flex flex-col items-center gap-1">
-                  <button
-                    onClick={toggleCamera}
-                    className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 p-2.5 rounded-lg border-2 border-retro-dark transition-all active:translate-y-0.5"
-                    title="Switch Camera View"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </button>
-                  <span className="font-mono text-[8px] text-zinc-400 uppercase tracking-wider">Flip</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* PHYSICAL CAMERA BODY PARTS OUTSIDE (Top Shutter & Winding Wheel) */}
-          <div className="w-full flex justify-between items-start px-8 -mt-[258px] mb-[215px] pointer-events-none relative z-10">
-            {/* Shutter Button (Clickable, but visually floats above the body) */}
-            <div className="pointer-events-auto flex flex-col items-center">
-              <button
-                onClick={takePhoto}
-                disabled={!readyToSnap || isWinding || isDeveloping}
-                className={`w-14 h-6 rounded-t-lg border-x-4 border-t-4 border-retro-dark transition-all duration-75 relative shadow-[0_-4px_6px_rgba(0,0,0,0.3)] ${
-                  readyToSnap && !isDeveloping
-                    ? 'bg-retro-shutter active:h-2 active:mt-4 hover:brightness-105'
-                    : 'bg-zinc-700 opacity-60 h-3 mt-3'
-                }`}
-                title="Shutter Button"
-              />
-              <span className="font-mono text-[8px] font-bold text-retro-dark uppercase tracking-widest mt-1">
-                SHUTTER
-              </span>
-            </div>
-
-            <div className="flex gap-4 items-end">
-              {/* LCD SHOTS REMAINING COUNTER */}
-              <div className="bg-[#100c0a] border-4 border-retro-dark p-2 rounded flex flex-col items-center justify-center text-center shadow-inner select-none pointer-events-auto min-w-[54px]">
-                <div className="font-mono text-red-600 text-sm font-black tracking-widest lcd-glow leading-none">
-                  {String(filmCounter).padStart(2, '0')}
-                </div>
-                <div className="font-mono text-[6px] text-zinc-500 uppercase mt-0.5 tracking-wider font-bold">
-                  S. Left
-                </div>
-              </div>
-
-              {/* Tactile Winding Wheel */}
-              <div className="pointer-events-auto flex flex-col items-center">
+              {/* Shutter Button (In place of Lens Graphic) */}
+              <div className="flex flex-col items-center gap-1">
                 <button
-                  onClick={windFilm}
-                  disabled={readyToSnap || isWinding || isDeveloping}
-                  className={`w-14 h-8 bg-zinc-900 border-x-4 border-t-4 border-retro-dark rounded-t shadow-[inset_0_1px_2px_rgba(255,255,255,0.1)] relative overflow-hidden transition-all active:brightness-95 ${
-                    readyToSnap || isDeveloping ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'
-                  } ${isWinding ? 'animate-spin [animation-duration:0.2s]' : ''}`}
-                  title="Wind Film"
+                  onClick={takePhoto}
+                  disabled={!readyToSnap || isWinding || isDeveloping}
+                  className={`w-16 h-16 bg-gradient-to-br from-zinc-800 to-zinc-950 border-[4px] border-retro-dark rounded-full shadow-xl flex items-center justify-center relative transition-all active:scale-95 active:shadow-inner ${
+                    readyToSnap && !isDeveloping ? 'cursor-pointer hover:border-zinc-700' : 'opacity-50 cursor-not-allowed'
+                  }`}
+                  title="Take Photo"
                 >
-                  {/* Wheel Grooves */}
-                  <div className="absolute inset-0 flex justify-between px-1 pointer-events-none">
-                    {[...Array(6)].map((_, i) => (
-                      <div key={i} className="w-1 h-full bg-zinc-800 border-x border-zinc-950" />
-                    ))}
-                  </div>
+                  <div className={`w-12 h-12 rounded-full border border-black flex items-center justify-center transition-colors shadow-inner ${
+                    readyToSnap && !isDeveloping ? 'bg-retro-shutter hover:bg-red-600' : 'bg-zinc-800'
+                  }`} />
                 </button>
-                <span className="font-mono text-[8px] font-bold text-retro-dark uppercase tracking-widest mt-1">
-                  WIND ↺
-                </span>
+                <span className="font-mono text-[9px] font-bold text-retro-shutter uppercase tracking-widest">Snap</span>
               </div>
+
+
+              {/* Empty placeholder to balance flex-between */}
+              <div className="w-12 h-12" />
             </div>
           </div>
-        </>
-      )}
     </div>
   );
 }
