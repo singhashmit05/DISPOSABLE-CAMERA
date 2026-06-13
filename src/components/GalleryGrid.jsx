@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Heart, Maximize2, Loader, Image as ImageIcon, Download } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export default function GalleryGrid({ nickname, sessionId, rollId }) {
   const [photos, setPhotos] = useState([]);
@@ -21,23 +22,36 @@ export default function GalleryGrid({ nickname, sessionId, rollId }) {
   const fetchPhotos = async (pageNum, replace = false) => {
     setLoading(true);
     try {
-      const rollParam = rollId ? `&roll_id=${rollId}` : '';
-      const res = await fetch(`/api/photos?page=${pageNum}&limit=16${rollParam}`);
-      if (!res.ok) throw new Error('Failed to fetch photos');
-      const data = await res.json();
+      const limit = 16;
+      const offset = (pageNum - 1) * limit;
+      
+      let query = supabase
+        .from('photos')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+        
+      if (rollId) {
+        query = query.eq('roll_id', rollId);
+      } else {
+        query = query.is('roll_id', null);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
       
       if (replace) {
-        setPhotos(data.photos);
+        setPhotos(data || []);
       } else {
         // Prevent duplicate IDs when appending
         setPhotos(prev => {
           const existingIds = new Set(prev.map(p => p.id));
-          const filteredNew = data.photos.filter(p => !existingIds.has(p.id));
+          const filteredNew = (data || []).filter(p => !existingIds.has(p.id));
           return [...prev, ...filteredNew];
         });
       }
       
-      setHasMore(data.photos.length === 16);
+      setHasMore((data || []).length === limit);
     } catch (err) {
       console.error(err);
     } finally {
@@ -52,66 +66,26 @@ export default function GalleryGrid({ nickname, sessionId, rollId }) {
     fetchPhotos(1, true);
   }, [rollId]);
 
-  // WebSockets for Real-time
+  // Supabase Real-time
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = window.location.host;
-    const wsUrl = `${protocol}//${wsHost}/ws`;
-    
-    const connectWS = () => {
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          
-          if (message.type === 'NEW_PHOTO') {
-            // Only show photos that belong to the same roll context
-            const photoRollId = message.photo.roll_id || null;
-            const currentRollId = rollId || null;
-            if (photoRollId !== currentRollId) return;
-
-            setPhotos(prev => {
-              if (prev.some(p => p.id === message.photo.id)) return prev;
-              return [message.photo, ...prev];
-            });
-          } else if (message.type === 'LIKE_UPDATE') {
-            setPhotos(prev => prev.map(p => {
-              if (p.id === message.photoId) {
-                return { ...p, likes: message.likes };
-              }
-              return p;
-            }));
-            
-            // Sync lightbox if open
-            setActiveLightbox(prev => {
-              if (prev && prev.id === message.photoId) {
-                return { ...prev, likes: message.likes };
-              }
-              return prev;
-            });
-          }
-        } catch (err) {
-          console.error('WS parse error:', err);
-        }
-      };
-
-      ws.onclose = () => {
-        // Reconnect after 3 seconds
-        setTimeout(connectWS, 3000);
-      };
-
-      ws.onerror = (err) => {
-        console.error('WS Connection error', err);
-        ws.close();
-      };
-    };
-
-    connectWS();
+    const channel = supabase.channel('public:photos')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'photos' }, (payload) => {
+        const photo = payload.new;
+        if ((photo.roll_id || null) !== (rollId || null)) return;
+        setPhotos(prev => {
+          if (prev.some(p => p.id === photo.id)) return prev;
+          return [photo, ...prev];
+        });
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'photos' }, (payload) => {
+        const photo = payload.new;
+        setPhotos(prev => prev.map(p => p.id === photo.id ? { ...p, likes: photo.likes } : p));
+        setActiveLightbox(prev => (prev && prev.id === photo.id) ? { ...prev, likes: photo.likes } : prev);
+      })
+      .subscribe();
 
     return () => {
-      if (wsRef.current) wsRef.current.close();
+      supabase.removeChannel(channel);
     };
   }, []);
 
@@ -142,20 +116,21 @@ export default function GalleryGrid({ nickname, sessionId, rollId }) {
     }
 
     try {
-      const res = await fetch(`/api/photos/${photoId}/like`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ session_id: sessionId })
-      });
-
-      if (!res.ok) {
-        throw new Error('Failed to toggle like');
+      if (isLiked) {
+        // Delete like
+        await supabase.from('photo_likes').delete().match({ photo_id: photoId, session_id: sessionId });
+        // Fetch current photo and update likes count
+        const { data: photoData } = await supabase.from('photos').select('likes').eq('id', photoId).single();
+        const currentLikes = Math.max(0, (photoData?.likes || 0) - 1);
+        await supabase.from('photos').update({ likes: currentLikes }).eq('id', photoId);
+      } else {
+        // Add like
+        await supabase.from('photo_likes').insert([{ photo_id: photoId, session_id: sessionId }]);
+        // Fetch current photo and update likes count
+        const { data: photoData } = await supabase.from('photos').select('likes').eq('id', photoId).single();
+        const currentLikes = (photoData?.likes || 0) + 1;
+        await supabase.from('photos').update({ likes: currentLikes }).eq('id', photoId);
       }
-      
-      const data = await res.json();
-      // DB changes will broadcast via WS and update lists automatically
     } catch (err) {
       console.error(err);
       // Revert optimistic update on failure

@@ -5,6 +5,7 @@ import NameModal from './components/NameModal';
 import GrainOverlay from './components/GrainOverlay';
 import RollsView from './components/RollsView';
 import { Camera, Image as ImageIcon, LogOut, User, Film, ArrowLeft, Link2, Copy, Check } from 'lucide-react';
+import { supabase } from './lib/supabase';
 
 export default function App() {
   const [nickname, setNickname] = useState('');
@@ -39,14 +40,20 @@ export default function App() {
         const slug = match[1];
         setRollLoading(true);
         try {
-          const res = await fetch(`/api/rolls/${slug}`);
-          if (res.ok) {
-            const data = await res.json();
-            setActiveRoll(data.roll);
+          const { data: roll, error } = await supabase
+            .from('rolls')
+            .select('*')
+            .eq('slug', slug)
+            .single();
+            
+          if (roll) {
+            setActiveRoll(roll);
             setCurrentTab('camera');
+          } else if (error) {
+            console.error('Failed to load roll from URL:', error);
           }
         } catch (err) {
-          console.error('Failed to load roll from URL:', err);
+          console.error('Unexpected error loading roll:', err);
         } finally {
           setRollLoading(false);
         }

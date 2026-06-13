@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Camera, RefreshCw, Upload, Sparkles } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export default function CameraView({ nickname, sessionId, onPhotoUploaded, rollId }) {
   const videoRef = useRef(null);
@@ -188,22 +189,52 @@ export default function CameraView({ nickname, sessionId, onPhotoUploaded, rollI
     }, 150);
 
     try {
-      const formData = new FormData();
-      formData.append('photo', photoBlob, `snapshot-${Date.now()}.jpg`);
-      formData.append('author_name', nickname);
-      formData.append('session_id', sessionId);
-      if (rollId) formData.append('roll_id', rollId);
+      const fileExt = 'jpg';
+      const fileName = `snapshot-${Date.now()}.${fileExt}`;
+      const filePath = `${sessionId}/${fileName}`;
 
-      const response = await fetch('/api/photos/upload', {
-        method: 'POST',
-        body: formData
-      });
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('photos')
+        .upload(filePath, photoBlob, {
+          contentType: 'image/jpeg'
+        });
 
-      if (!response.ok) {
-        throw new Error('Upload failed');
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('photos')
+        .getPublicUrl(filePath);
+
+      const fileId = crypto.randomUUID();
+
+      // Insert record to database
+      const photoRecord = {
+        id: fileId,
+        url: publicUrl,
+        thumbnail: publicUrl, // Using the same URL for simplicity
+        author_name: nickname,
+        session_id: sessionId,
+        roll_id: rollId || null
+      };
+
+      const { data: photo, error: dbError } = await supabase
+        .from('photos')
+        .insert([photoRecord])
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+
+      // Increment roll photo_count
+      if (rollId) {
+        const { data: rollData } = await supabase.from('rolls').select('photo_count').eq('id', rollId).single();
+        const newCount = (rollData?.photo_count || 0) + 1;
+        await supabase.from('rolls').update({ photo_count: newCount }).eq('id', rollId);
       }
-
-      const result = await response.json();
+      
+      const result = { photo };
       
       // Wait for developer bar to finish
       setTimeout(() => {

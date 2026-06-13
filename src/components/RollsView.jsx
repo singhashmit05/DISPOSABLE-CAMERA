@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Link2, Copy, Check, Film, Users, ChevronRight, Loader, Sparkles } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export default function RollsView({ nickname, sessionId, onJoinRoll }) {
   const [rolls, setRolls] = useState([]);
@@ -13,10 +14,13 @@ export default function RollsView({ nickname, sessionId, onJoinRoll }) {
   const fetchRolls = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/rolls');
-      if (!res.ok) throw new Error('Failed to fetch');
-      const data = await res.json();
-      setRolls(data.rolls || []);
+      const { data, error } = await supabase
+        .from('rolls')
+        .select('*')
+        .order('created_at', { ascending: false });
+        
+      if (error) throw error;
+      setRolls(data || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -28,27 +32,39 @@ export default function RollsView({ nickname, sessionId, onJoinRoll }) {
     fetchRolls();
   }, []);
 
+  const generateSlug = (name) => {
+    const base = name.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-').slice(0, 30);
+    const suffix = Math.random().toString(36).substring(2, 6);
+    return `${base}-${suffix}`;
+  };
+
   const handleCreate = async (e) => {
     e.preventDefault();
     if (!createName.trim() || creating) return;
 
     setCreating(true);
     try {
-      const res = await fetch('/api/rolls', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: createName.trim(),
-          description: createDescription.trim(),
-          author_name: nickname,
-          session_id: sessionId
-        })
-      });
+      const rollId = crypto.randomUUID();
+      const slug = generateSlug(createName);
 
-      if (!res.ok) throw new Error('Failed to create roll');
-      const data = await res.json();
+      const newRoll = {
+        id: rollId,
+        slug,
+        name: createName.trim(),
+        description: createDescription.trim(),
+        created_by: nickname || 'Anonymous',
+        session_id: sessionId
+      };
 
-      setRolls(prev => [data.roll, ...prev]);
+      const { data, error } = await supabase
+        .from('rolls')
+        .insert([newRoll])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setRolls(prev => [data, ...prev]);
       setCreateName('');
       setCreateDescription('');
       setShowCreateModal(false);
